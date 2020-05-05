@@ -1,21 +1,108 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <unistd.h>
-#include <sys/types.h>
+#include <time.h>
 
+#define RR 0
+#define SJF 1
+#define PQ 2
+#define FIFO 3
 
-typedef struct Node
+/* initial queue */
+typedef struct Process
 {
-	pid_t data;
-	struct Node *next;
-} Node;
+	int pid;
+	int burstTime;
 
+	struct Process *next;
+} Process;
+
+/* new state queue and 4 ready queue */
 typedef struct Queue
 {
-	Node *front;
-	Node *rear;
+	Process *front;
+	Process *rear;
 	int count;
+	int state;
+
+	int isPreemptive;
+	int quantum;
 } Queue;
+
+void InitQueue(Queue *);
+void Enqueue(Queue *, int, int);
+int Dequeue(Queue *);
+void ServiceProcess(void);
+int BurstTimeCal(int, int);
+void CreateProcess(Queue *, int, int);
+void SelectProcess(void);
+void CheckQueue(Queue *);
+
+int lastPid = 0;
+
+void CheckQueue(Queue *queue)
+{
+	if(queue->state == RR)
+	{
+		
+	}
+	else if(queue->state == SJF)
+	{
+		if(queue->isPreemptive)
+			printf("preemptive sjf checked.\n");
+		else
+			printf("nonpreemptive sjf checked.\n");
+	}
+	else if(queue->state == PQ)
+	{
+		if(queue->isPreemptive)
+		{
+		}
+
+		printf("pq checked.\n");
+	}
+	else if(queue->state == FIFO)
+	{
+		printf("fifo checked.\n");
+	}
+	else
+	{
+		
+	}	
+}
+
+void CreateProcess(Queue *queue, int alpha, int estimate)
+{
+	srand(time(NULL));
+
+	int random = rand() % 2;
+
+	if(random > -1)
+	{
+		int pid = ++lastPid;
+
+		int burst = BurstTimeCal(alpha, estimate);
+		Enqueue(queue, pid, burst);
+
+		printf("Process created. pid: %d\n", pid);
+	}
+	else
+	{
+		return;
+	}
+}
+
+int BurstTimeCal(int alpha, int estimate)
+{
+	float coef = 0.5;
+
+	float result = coef * (float) alpha + (1 - coef) * (float) estimate;	
+
+	int resultInt = (int) result;
+
+	printf("[bustTimeCal] alpha: %.1f, estimate: %.1f, result: %.3f\n", (float) alpha, (float) estimate, result);
+
+	return (int) result;
+}
 
 void InitQueue(Queue *queue)
 {
@@ -28,11 +115,14 @@ int IsEmpty(Queue *queue)
 	return queue->count == 0;
 }
 
-void Enqueue(Queue *queue, pid_t data)
+void Enqueue(Queue *queue, int pid, int burstTime)
 {
-	Node *new = (Node *)malloc(sizeof(Node));
-	new->data = data;
+	Process *new = (Process *)malloc(sizeof(Process));
+	new->pid = pid;
+	new->burstTime = burstTime;
 	new->next = NULL;
+
+	printf("enqueued -> pid: %d, burstTime: %d\n", pid, burstTime);
 
 	if(IsEmpty(queue))
 	{
@@ -44,25 +134,27 @@ void Enqueue(Queue *queue, pid_t data)
 	}
 	queue->rear = new;
 	queue->count++;
+
+	printf("enqueue successed\n");
 }
 
-pid_t Dequeue(Queue *queue)
+int Dequeue(Queue *queue)
 {
-	pid_t data;
-	Node *node;
+	int pid;
+	Process *process;
 
 	if(IsEmpty(queue))
 		return 0;
 
-	node = queue->front;
-	data = node->data;
-	queue->front = node->next;
-	free(node);
+	process = queue->front;
+	pid = process->pid;
+	queue->front = process->next;
+	free(process);
 	queue->count--;
 
-	printf("dequeue ==> pid: %ld\n", (long) getpid());
+	printf("dequeued -> pid: %d\n", pid);
 
-	return data;
+	return pid;
 }
 
 int main(void)
@@ -102,7 +194,7 @@ int main(void)
 	scanf("%d", &contextSwitchingTime);
 */
 	/* if it's not 0 or 1, don't accept it. */
-/*	while(preemptionSJF != 0 && preemptionSJF != 1)
+	while(preemptionSJF != 0 && preemptionSJF != 1)
 	{
 		printf("SJF with pre-emption (1-yes/0-no): ");
 		scanf("%d", &preemptionSJF);
@@ -120,9 +212,9 @@ int main(void)
 			printf("Choose from 0 or 1.\n");
 
 	}
-*/
+
 	/* alpha coefficient  */
-/*	printf("Enter the alpha co-eff for RR: ");
+	printf("Enter the alpha co-eff for RR: ");
 	scanf("%d", &alphaRR);
 
 	printf("Enter the alpha co-eff for SJF: ");
@@ -133,7 +225,7 @@ int main(void)
 
 	printf("Enter the alpha co-eff for FIFO: ");
 	scanf("%d", &alphaFIFO);
-*/
+
 	/* aging threshold */
 /*	printf("Enter the aging time for RR: ");
 	scanf("%d", &agingRR);
@@ -148,7 +240,7 @@ int main(void)
 	scanf("%d", &agingFIFO);
 */
 	/* previous estimated values */
-/*	printf("Enter the initial estimated time for RR: ");
+	printf("Enter the initial estimated time for RR: ");
 	scanf("%d", &estimateRR);
 
 	printf("Enter the initial estimated time for SJF: ");
@@ -159,26 +251,59 @@ int main(void)
 
 	printf("Enter the initial estimated time for FIFO: ");
 	scanf("%d", &estimateFIFO);
-*/
-	while(timeCycle > 0)
-	{
-		printf("timeCycle: %d\n", timeCycle);
-		
-		timeCycle--;
-	}
 
 	Queue queueRR;
 	InitQueue(&queueRR);
+	queueRR.quantum = quantumRR;
+	queueRR.state = RR;
 
-	pid_t pid = fork();
-	if(pid == 0)
+	Queue queueSJF;
+	InitQueue(&queueSJF);
+	queueSJF.isPreemptive = preemptionSJF;
+	queueSJF.state = SJF;
+
+	Queue queuePQ;
+	InitQueue(&queuePQ);
+	queuePQ.isPreemptive = preemptionPQ;
+	queuePQ.state = PQ;
+
+	Queue queueFIFO;
+	InitQueue(&queueFIFO);
+	queueFIFO.state = FIFO;
+
+	srand((unsigned int) time(NULL));
+
+	while(timeCycle > 0)
 	{
-		Enqueue(&queueRR, pid);
+		printf("time cycle: %d\n", timeCycle);		
+		int random = rand() % 4;
 
-		printf("queue count: %d\n", queueRR.count);
-		
-		pid_t pid2 = Dequeue(&queueRR);
-		printf("%ld\n",(long) getpid());
+		switch(random) // The initial process enters a random queue.
+		{
+			case 0:
+				CreateProcess(&queueRR, alphaRR, estimateRR);
+				printf("queueRR entered: %d\n", lastPid+1);
+				break;
+			case 1:
+				CreateProcess(&queueSJF, alphaSJF, estimateSJF);
+				printf("queueSJF entered: %d\n", lastPid+1);
+				break;
+			case 2:
+				CreateProcess(&queuePQ, alphaPQ, estimatePQ);
+				printf("queuePQ entered: %d\n", lastPid+1);
+				break;
+			case 3:
+				CreateProcess(&queueFIFO, alphaFIFO, estimateFIFO);
+				printf("queueFIFO entered: %d\n", lastPid+1);
+				break;
+		}
+
+		CheckQueue(&queueRR);
+		CheckQueue(&queueSJF);
+		CheckQueue(&queuePQ);
+		CheckQueue(&queueFIFO);
+
+		timeCycle--;
 	}
 
 	return 0;

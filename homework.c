@@ -6,14 +6,18 @@
 #define SJF 1
 #define PQ 2
 #define FIFO 3
+#define SERVE 4
+
 
 /* initial queue */
 typedef struct Process
 {
 	int pid;
 	int burstTime;
+	int state;
+	int priority; // 경우에 따라서 사용 x
 
-	struct Process *next;
+	struct Process *next; // program counter
 } Process;
 
 /* new state queue and 4 ready queue */
@@ -30,7 +34,7 @@ typedef struct Queue
 
 void InitQueue(Queue *);
 void Enqueue(Queue *, int, int);
-int Dequeue(Queue *);
+Process *Dequeue(Queue *);
 void ServiceProcess(void);
 int BurstTimeCal(int, int);
 void CreateProcess(Queue *, int, int);
@@ -38,37 +42,6 @@ void SelectProcess(void);
 void CheckQueue(Queue *);
 
 int lastPid = 0;
-
-void CheckQueue(Queue *queue)
-{
-	if(queue->state == RR)
-	{
-		
-	}
-	else if(queue->state == SJF)
-	{
-		if(queue->isPreemptive)
-			printf("preemptive sjf checked.\n");
-		else
-			printf("nonpreemptive sjf checked.\n");
-	}
-	else if(queue->state == PQ)
-	{
-		if(queue->isPreemptive)
-		{
-		}
-
-		printf("pq checked.\n");
-	}
-	else if(queue->state == FIFO)
-	{
-		printf("fifo checked.\n");
-	}
-	else
-	{
-		
-	}	
-}
 
 void CreateProcess(Queue *queue, int alpha, int estimate)
 {
@@ -82,8 +55,6 @@ void CreateProcess(Queue *queue, int alpha, int estimate)
 
 		int burst = BurstTimeCal(alpha, estimate);
 		Enqueue(queue, pid, burst);
-
-		printf("Process created. pid: %d\n", pid);
 	}
 	else
 	{
@@ -95,7 +66,11 @@ int BurstTimeCal(int alpha, int estimate)
 {
 	float coef = 0.5;
 
-	float result = coef * (float) alpha + (1 - coef) * (float) estimate;	
+	srand(time(NULL));
+	int random = rand() % 10;
+	random -= 5;
+
+	float result = coef * (float) alpha + (1 - coef) * (float) estimate + (float) random;	
 
 	int resultInt = (int) result;
 
@@ -108,6 +83,7 @@ void InitQueue(Queue *queue)
 {
 	queue->front = queue->rear = NULL;
 	queue->count = 0;
+	queue->state = -1;
 }
 
 int IsEmpty(Queue *queue)
@@ -121,24 +97,63 @@ void Enqueue(Queue *queue, int pid, int burstTime)
 	new->pid = pid;
 	new->burstTime = burstTime;
 	new->next = NULL;
+	new->state = queue->state;
 
-	printf("enqueued -> pid: %d, burstTime: %d\n", pid, burstTime);
+	queue->count++;
 
 	if(IsEmpty(queue))
 	{
 		queue->front = new;
+		queue->rear = new;
+		
+		return;
 	}
-	else
-	{
-		queue->rear->next = new;
-	}
-	queue->rear = new;
-	queue->count++;
 
-	printf("enqueue successed\n");
+	Process *prev = NULL;
+	Process *current = queue->front;
+
+	switch(queue->state)
+	{
+		case RR:
+			queue->rear->next = new;
+			queue->rear = new;
+			break;
+		case SJF:
+			while(current)
+			{
+				if(current->burstTime < new->burstTime)
+				{
+					prev = current;
+					current = current->next;
+				}
+				else
+					break;
+			}
+
+			if(prev == NULL)
+			{
+				new->next = current;
+				queue->front = new;
+			}
+			else
+			{
+				new->next = current;
+				prev->next = new;
+			}
+			printf("[ENQUEUE]\npid: %d, burstTime: %d, state: %d\n", new->pid, new->burstTime, new->state);
+
+			break;
+		case PQ:
+			break;
+		case FIFO:
+			if(!IsEmpty(queue))
+				queue->rear->next = new;
+			queue->rear = new;
+			break;
+	}
 }
 
-int Dequeue(Queue *queue)
+Process *Dequeue(Queue *queue)
 {
 	int pid;
 	Process *process;
@@ -147,14 +162,31 @@ int Dequeue(Queue *queue)
 		return 0;
 
 	process = queue->front;
-	pid = process->pid;
 	queue->front = process->next;
-	free(process);
 	queue->count--;
 
-	printf("dequeued -> pid: %d\n", pid);
+	printf("[DEQUEUE]\npid: %d\n", process->pid);
 
-	return pid;
+	return process;
+}
+
+void PrintQueue(Queue *queue)
+{
+	Process *process = queue->front;
+
+	printf("[PRINT]\n");
+
+	for(int i = 0; i < queue->count; i++)
+	{
+		if(process != NULL)
+		{
+			printf("[pid: %d] = %d,", process->pid, process->burstTime);
+			process = process->next;
+		}
+		else
+			break;
+	}
+	printf("\n");
 }
 
 int main(void)
@@ -275,33 +307,30 @@ int main(void)
 
 	while(timeCycle > 0)
 	{
-		printf("time cycle: %d\n", timeCycle);		
-		int random = rand() % 4;
+		printf("time cycle: %d\n", timeCycle);	
 
-		switch(random) // The initial process enters a random queue.
+		switch(rand() % 4) // The initial process enters a random queue.
 		{
 			case 0:
+				printf("case 0 execution.\n");
 				CreateProcess(&queueRR, alphaRR, estimateRR);
-				printf("queueRR entered: %d\n", lastPid+1);
 				break;
 			case 1:
+				printf("case 1 execution.\n");
 				CreateProcess(&queueSJF, alphaSJF, estimateSJF);
-				printf("queueSJF entered: %d\n", lastPid+1);
+				
 				break;
 			case 2:
+				printf("case 2 execution.\n");
 				CreateProcess(&queuePQ, alphaPQ, estimatePQ);
-				printf("queuePQ entered: %d\n", lastPid+1);
+				
 				break;
 			case 3:
+				printf("case 3 execution.\n");
 				CreateProcess(&queueFIFO, alphaFIFO, estimateFIFO);
-				printf("queueFIFO entered: %d\n", lastPid+1);
+				
 				break;
 		}
-
-		CheckQueue(&queueRR);
-		CheckQueue(&queueSJF);
-		CheckQueue(&queuePQ);
-		CheckQueue(&queueFIFO);
 
 		timeCycle--;
 	}

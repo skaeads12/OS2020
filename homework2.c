@@ -9,11 +9,14 @@
 #define SERVE 4
 
 int lastPid = 0;
-float alpha = 5;
-float estimate = 10;
 int serving = 0; // cpu에서 작업중인 프로세스 pid, 없으면 0
-int needSwitching = 0; // 스위칭이 필요하면 1
+int needSwitching = 1; // 스위칭이 필요하면 1, 첫 작업엔 필요
 int switchingTime = 0; // 스위칭 하는데 남은 시간
+
+/* 스위칭, 생성된 프로세스, 종료된 프로세스 횟수 */
+int switchingCount = 0;
+int generatedTotal = 0;
+int terminatedTotal = 0;
 
 typedef struct Process
 {
@@ -22,6 +25,8 @@ typedef struct Process
 	int priority;
 	int burstTime;
 	int arrivalTime;
+
+	int age;
 
 	struct Process *pc;
 } Process;
@@ -37,11 +42,11 @@ typedef struct Queue
 	int preemptive;
 } Queue;
 
-void GenerateBurstTime(Process *);
+int GenerateBurstTime(float, float);
 void GeneratePriority(Process *);
 void Terminate(Process *);
 
-Process *CreateProcess(void)
+Process *CreateProcess(int alpha, int estimate)
 {
 	int pid = ++lastPid;
 
@@ -50,8 +55,9 @@ Process *CreateProcess(void)
 	new->pid = pid;
 	new->state = -1;
 	new->priority = -1;
-	new->burstTime = -1;
+	new->burstTime = GenerateBurstTime((float) alpha, (float) estimate);
 	new->arrivalTime = -1;
+	new->age = 0;
 
 	return new;
 }
@@ -71,15 +77,25 @@ Queue *CreateQueue(void)
 
 int IsEmptyQueue(Queue *queue)
 {
+	printf("위치: isemptyqueue\n");
+
+	if(queue->count <= 0)
+		queue->count = 0;
+
+	printf("isemptyqueue 문제 x\n");
 	return queue->count == 0;
 }
 
 void Enqueue_RR_FIFO(Queue *queue, Process *process)
 {
+	if(process == NULL)
+		return;
+
 	process->state = queue->state;
+	process->pc = NULL;
 
 	if(process->burstTime == -1)
-		GenerateBurstTime(process);
+		printf("BURST TIME ERROR IN FIFO.\n");
 
 	if(IsEmptyQueue(queue))
 	{
@@ -100,12 +116,18 @@ void Enqueue_RR_FIFO(Queue *queue, Process *process)
 void Enqueue_SJF(Queue *queue, Process *process)
 {
 	if(process->burstTime == -1)
-		GenerateBurstTime(process);
+		printf("BURST TIME ERROR IN SJF.\n");
+
+	if(process == NULL || queue == NULL)
+		return;
 
 	process->state = queue->state;
+	process->pc = NULL;
 
 	if(IsEmptyQueue(queue))
 	{
+		printf("isemptyqueue = 1\n");
+
 		queue->front = process;
 		queue->rear = process;
 		queue->count++;
@@ -113,6 +135,7 @@ void Enqueue_SJF(Queue *queue, Process *process)
 	}
 	else
 	{
+		printf("isemptyqueue = 0\n");
 		Process *current = queue->front;
 		Process *prev = NULL;
 
@@ -146,10 +169,14 @@ void Enqueue_PQ(Queue *queue, Process *process)
 	if(process->priority == -1)
 		GeneratePriority(process);
 
+	if(process == NULL || queue == NULL)
+		return;
+
 	process->state = queue->state;
+	process->pc = NULL;
 
 	if(process->burstTime == -1)
-		GenerateBurstTime(process);
+		printf("BURST TIME ERROR IN PQ.\n");
 
 	if(IsEmptyQueue(queue))
 	{
@@ -200,11 +227,51 @@ void Enqueue(Queue *queue, Process *process)
 
 Process *Dequeue(Queue *queue)
 {
+
+	printf("위치: dequeue\n");
+
+	if(IsEmptyQueue(queue))
+	{
+		return NULL;
+	}
+
 	Process *process = queue->front;
+
+	if(process == NULL)
+		return NULL;
+
 	queue->front = process->pc;
+	process->pc = NULL;
+
 	queue->count--;
 
+	printf("dequeue 문제 x\n");
+
 	return process;
+}
+
+Process *Dequeue_Process(Queue *queue, Process *prev)
+{
+	printf("DEQUEUE 진입. queue->count: %d\n\n", queue->count);
+
+	Process *temp;
+
+	if(IsEmptyQueue(queue))
+		return NULL;
+	
+	if(prev != NULL)
+	{
+		temp = prev->pc;
+		prev->pc = temp->pc;
+		temp->pc = NULL;
+		queue->count--;
+	}
+	else
+	{
+		temp = Dequeue(queue);
+	}
+
+	return temp;
 }
 
 void PrintQueue(Queue *queue) // 코드 완성되면 지울것
@@ -229,7 +296,7 @@ void PrintQueue2(Queue *queue) // 테스트용 2
 	}
 }
 
-void GenerateBurstTime(Process *process)
+int GenerateBurstTime(float alpha, float estimate)
 {
 
 	float coef = rand() / (float) RAND_MAX;
@@ -241,9 +308,9 @@ void GenerateBurstTime(Process *process)
 	else if(result == 0)
 		result = 1;
 
-	process->burstTime = (int) result;
-
 	printf("Process execution time = %d\n\n", (int) result);
+
+	return (int) result;
 }
 
 void GeneratePriority(Process *process)
@@ -272,9 +339,13 @@ void Service(Process *process)
 /* 선택할 때 serving이 pid가 됨, 마찬가지로 없다면 그대로 */
 Process *Select(Queue *queue)
 {
+	printf("위치: select\n");
 	if(!IsEmptyQueue(queue))
 	{
 		Process *servedProcess = Dequeue(queue);
+		if(servedProcess == NULL)
+			return NULL;
+
 		serving = servedProcess->pid;
 		
 		return servedProcess;
@@ -285,7 +356,8 @@ Process *Select(Queue *queue)
 
 void Terminate(Process *process)
 {
-	
+	terminatedTotal++;
+	printf("PROCESS TERMINATED: PID[%d], STATE[%d]\n", process->pid, process->state);
 	free(process);
 }
 
@@ -299,9 +371,141 @@ Process *ContextSwitching(Queue *queue, Process *currentProcess)
 	}
 	else
 	{
+		switchingCount++;
 		Process *new = Select(queue);
 		Enqueue(queue, currentProcess);
 		return new;
+	}
+}
+
+//각 큐의 aging integer은 aging threshold
+void Aging(Queue *queueRR, Queue *queueSJF, Queue *queuePQ, Queue *queueFIFO, int agingSJF, int agingPQ, int agingFIFO)
+{
+	Process *process = queueSJF->front;
+	Process *prev = NULL;
+	int count = 0;
+
+	while(process != NULL)
+	{
+		process->age++;
+		if(process->age >= agingSJF)
+		{
+			printf("AGING PROCESS DETECTED IN SJF. PID: %d, AGE: %d\n", process->pid, process->age);
+			process->age = 0;
+
+			if(prev == NULL)
+			{
+				printf("DEQUEUE 전.\n");
+				process = Dequeue(queueSJF);
+
+				if(process == NULL)
+					break;
+
+				Enqueue(queueRR, process);
+				printf("ENQUEUE 뒤.\n");
+				process = queueSJF->front;
+				printf("queueSJF->front 호출 뒤.\n");
+			}
+			else
+			{
+				process = Dequeue_Process(queueSJF, prev);
+				if(process == NULL)
+					break;
+				
+				Enqueue(queueRR, process);
+
+				process = prev->pc;
+			}
+		}
+		else
+		{
+			prev = process;
+			process = process->pc;
+		}
+		if(prev == process)
+			break;
+	}
+
+	process = queuePQ->front;
+	prev = NULL;
+
+	while(process != NULL)
+	{
+		process->age++;
+		if(process->age >= agingPQ)
+		{
+			printf("AGING PROCESS DETECTED IN PQ. PID: %d, AGE: %d\n", process->pid, process->age);
+			if(prev == NULL)
+			{
+				process = Dequeue(queuePQ);
+
+				if(process == NULL)
+					break;
+
+				Enqueue(queueSJF, process);
+
+				process = queuePQ->front;
+			}
+			else
+			{
+				process = Dequeue_Process(queuePQ, prev);
+
+				if(process == NULL)
+					break;
+
+				Enqueue(queueSJF, process);
+
+				process = prev->pc;
+			}
+		}
+		else
+		{
+			prev = process;
+			process = process->pc;
+		}
+
+		if(prev == process)
+			break;
+	}
+
+	process = queueFIFO->front;
+	prev = NULL;
+
+	while(process != NULL)
+	{
+		process->age++;
+		if(process->age >= agingFIFO)
+		{
+			printf("AGING PROCESS DETECTED IN FIFO. PID: %d, AGE: %d\n", process->pid, process->age);
+			if(prev == NULL)
+			{
+				process = Dequeue(queueFIFO);
+				if(process == NULL)
+					break;
+
+				Enqueue(queuePQ, process);
+				
+				process = queuePQ->front;
+			}
+			else
+			{
+				process = Dequeue_Process(queueFIFO, prev);
+				if(process == NULL)
+					break;
+
+				Enqueue(queuePQ, process);
+
+				process = prev->pc;
+			}
+		}
+		else
+		{
+			prev = process;
+			process = process->pc;
+		}
+
+		if(prev == process)
+			break;
 	}
 }
 
@@ -316,50 +520,140 @@ int main(void)
 	Queue *queueFIFO = CreateQueue();
 	queueFIFO->state = FIFO;
 
-	Process *currentProcess = CreateProcess();
+	Process *currentProcess = CreateProcess(0, 0);
 
-	int initSwitchingTime = 1;
-	int initQuantum = 20;
+	int timeCycle;
+	int initSwitchingTime;
+	int initQuantum;
+	printf("Enter the time cycles: ");
+	scanf("%d", &timeCycle);
+
+	printf("Enter the vaule of time slot for RR: ");
+//	scanf("%d", &initQuantum);
+	initQuantum = 5;
+
+	printf("Enter the context switching time: ");
+//	scanf("%d", &initSwitchingTime);
+	initSwitchingTime = 1;
 
 	queueRR->quantum = initQuantum;
 
-	int preemptionSJF = 1;
-	int preemptionPQ = 1;
+	int preemptionSJF;
+	int preemptionPQ;
 
-	needSwitching = 1;
-	switchingTime = 0;
+	printf("SJF with pre-emption(1-yes/0-no): ");
+//	scanf("%d", &preemptionSJF);
+	preemptionSJF = 0;
+	queueSJF->preemptive = preemptionSJF;
+
+	printf("PQ with pre-emption(1-yes/0-no): ");
+//	scanf("%d", &preemptionPQ);
+	preemptionPQ = 0;
+	queuePQ->preemptive = preemptionPQ;
+
+	int alphaRR = 5;
+	int alphaSJF = 5;
+	int alphaPQ = 5;
+	int alphaFIFO = 5;
+
+	printf("Enter the alpha co-eff for RR: ");
+//	scanf("%d", &alphaRR);
+	
+	
+	printf("Enter the alpha co-eff for SJF: ");
+//	scanf("%d", &alphaSJF);
+
+	printf("Enter the alpha co-eff for PQ: ");
+//	scanf("%d", &alphaPQ);
+
+	printf("Enter the alpha co-eff for FIFO: ");
+//	scanf("%d", &alphaFIFO);
+
+	int agingRR = 5;
+	int agingSJF = 5;
+	int agingPQ = 5;
+	int agingFIFO = 5;
+
+	printf("Enter the aging time for RR: ");
+//	scanf("%d", &agingRR);
+
+	printf("Enter the aging time for SJF: ");
+//	scanf("%d", &agingSJF);
+
+	printf("Enter the aging time for PQ: ");
+//	scanf("%d", &agingPQ);
+
+	printf("Enter the aging time for FIFO: ");
+//	scanf("%d", &agingFIFO);
+
+	int estimateRR = 5;
+	int estimateSJF = 5;
+	int estimatePQ = 5;
+	int estimateFIFO = 5;
+
+	printf("Enter the initial estimated time for RR: ");
+//	scanf("%d", &estimateRR);
+
+	printf("Enter the initial estimated time for SJF: ");
+//	scanf("%d", &estimateSJF);
+
+	printf("Enter the initial estimated time for PQ: ");
+//	scanf("%d", &estimatePQ);
+
+	printf("Enter the initial estimated time for FIFO: ");
+//	scanf("%d", &estimateFIFO);
 
 	srand(time(NULL));
 
 	queueRR->quantum = initQuantum;
 
-	for(int i = 0; i < 100; i++)
+	for(int i = 0; i < timeCycle; i++)
 	{
-		printf("-------------------------------------\n[CYCLE TIME: %d]\n----------------------------------\n", i);
+		printf("-------------------------------------\n[CYCLE TIME: %d]\n----------------------------------\n\n", i);
+
+		if(queueSJF == NULL)
+		{
+			queueSJF = CreateQueue();
+			queueSJF->state = SJF;
+			queueSJF->preemptive = preemptionSJF;
+		}
+
+		if(queuePQ == NULL)
+		{
+			queuePQ = CreateQueue();
+			queuePQ->state = PQ;
+			queuePQ->preemptive = preemptionPQ;
+		}
 
 		if(rand() % 2 == 0 || i == 0) // 50% 프로세스 생성
 		{
+			generatedTotal++;
 			switch(rand() % 4)
 			{
 				case 0:
-					Enqueue_RR_FIFO(queueRR, CreateProcess());
 					printf("Process appended to RR queue.\n");
+					
+					Enqueue_RR_FIFO(queueRR, CreateProcess(alphaRR, estimateRR));
+					
 					break;
 				case 1:
-					Enqueue_SJF(queueSJF, CreateProcess());
+					printf("Process appended to SJF queue.\n");
+					Enqueue_SJF(queueSJF, CreateProcess(alphaSJF, estimateSJF));
 					if(currentProcess->state == SJF && currentProcess->burstTime > queueSJF->front->burstTime && preemptionSJF == 0)
 						needSwitching = 1;
-					printf("Process appended to SJF queue.\n");
+					
 					break;
 				case 2:
-					Enqueue_PQ(queuePQ, CreateProcess());
+					printf("Process appended to PQ queue.\n");
+					Enqueue_PQ(queuePQ, CreateProcess(alphaPQ, estimatePQ));
 					if(currentProcess->state == PQ && currentProcess->priority > queuePQ->front->burstTime && preemptionPQ == 0)
 						needSwitching = 1;
-					printf("Process appended to PQ queue.\n");
+					
 					break;
 				case 3:
-					Enqueue_RR_FIFO(queueFIFO, CreateProcess());
-					printf("Process appended to FIFO queue\n");
+					printf("Process appended to FIFO queue.\n");
+					Enqueue_RR_FIFO(queueFIFO, CreateProcess(alphaFIFO, estimateFIFO));
+					
 					break;
 			}
 		}
@@ -368,16 +662,33 @@ int main(void)
 			printf("no new process was generated.\n\n");
 		}
 
+		printf("프로세스 생성 문제 x\n");
+
 		if(switchingTime > 0) // 스위칭 중이면 작업없이 다음 사이클로
 		{
+			printf("위치 0");
+			Aging(queueRR, queueSJF, queuePQ, queueFIFO, agingSJF, agingPQ, agingFIFO);
+
+			printf("IDLE TIME\n\n");
+
 			switchingTime--;
-			
+			printf("# of jobs in RR = %d\n\n", queueRR->count);
+			printf("# of jobs in SJF = %d\n\n", queueSJF->count);
+			printf("# of jobs in PQ = %d\n\n", queuePQ->count);
+			printf("# of jobs in FIFO = %d\n\n", queueFIFO->count);
+
+			printf("#context switches = %d\n\n", switchingCount);
+			printf("#Total processes generated = %d\n\n", generatedTotal);
+			printf("#Total processes completed = %d\n\n", terminatedTotal);
 			continue;
 		}
 
 		if((serving == 0 && needSwitching == 1) || i == 0) // 작업중이던 프로세스 TERMINATED.
 		{
-			currentProcess = currentProcess->pc;
+			printf("위치 1\n");
+			if(currentProcess != NULL)
+				currentProcess = currentProcess->pc;
+			printf("위치 1-1\n");
 			if(!currentProcess) // 다음 작업할 프로세스 선택
 			{
 				if(IsEmptyQueue(queueRR))
@@ -403,9 +714,8 @@ int main(void)
 		}
 		else if(needSwitching == 1) // 컨텍스트 스위칭이 필요할때
 		{
-			printf("STATE: %d\n", currentProcess->state);
-			int state = currentProcess->state;
-			switch(state)
+			printf("위치 2\n");
+			switch(currentProcess->state)
 			{
 				case SJF:
 					currentProcess = ContextSwitching(queueSJF, currentProcess);
@@ -419,6 +729,7 @@ int main(void)
 		}
 		else // 그냥 계속 서비스
 		{
+			printf("위치 3\n");
 			Service(currentProcess);
 			if(currentProcess->state == RR)
 			{
@@ -433,10 +744,17 @@ int main(void)
 			}
 		}
 
+		Aging(queueRR, queueSJF, queuePQ, queueFIFO, agingSJF, agingPQ, agingFIFO);
+
 		printf("# of jobs in RR = %d\n\n", queueRR->count);
 		printf("# of jobs in SJF = %d\n\n", queueSJF->count);
 		printf("# of jobs in PRQ = %d\n\n", queuePQ->count);
 		printf("# of jobs in FIFO = %d\n\n", queueFIFO->count);
+
+		printf("#context switches = %d\n\n", switchingCount);
+		printf("#Total processes generated = %d\n\n", generatedTotal);
+		printf("#Total processes completed = %d\n\n", terminatedTotal);
+
 	}
 
 

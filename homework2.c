@@ -17,6 +17,7 @@ int switchingTime = 0; // 스위칭 하는데 남은 시간
 int switchingCount = 0;
 int generatedTotal = 0;
 int terminatedTotal = 0;
+int totalServiceTime = 0;
 
 typedef struct Process
 {
@@ -310,6 +311,8 @@ int GenerateBurstTime(float alpha, float estimate)
 	else if(result == 0)
 		result = 1;
 
+	printf("Process execution time: %d\n\n", (int) result);
+
 	return (int) result;
 }
 
@@ -331,6 +334,7 @@ void Service(Process *process)
 	}
 
 	process->burstTime--;
+	totalServiceTime++;
 
 	if(!process->burstTime) // 서비스 종료
 	{
@@ -360,7 +364,6 @@ Process *Select(Queue *queue)
 void Terminate(Process *process)
 {
 	terminatedTotal++;
-	printf("PROCESS TERMINATED: PID[%d], STATE[%d]\n", process->pid, process->state);
 	free(process);
 }
 
@@ -397,7 +400,7 @@ void Aging(Queue *queueRR, Queue *queueSJF, Queue *queuePQ, Queue *queueFIFO, in
 		process->age++;
 		if(process->age >= agingSJF)
 		{
-			printf("AGING PROCESS DETECTED IN SJF. PID: %d, AGE: %d\n", process->pid, process->age);
+			
 			process->age = 0;
 
 			if(prev == NULL)
@@ -438,7 +441,7 @@ void Aging(Queue *queueRR, Queue *queueSJF, Queue *queuePQ, Queue *queueFIFO, in
 		process->age++;
 		if(process->age >= agingPQ)
 		{
-			printf("AGING PROCESS DETECTED IN PQ. PID: %d, AGE: %d\n", process->pid, process->age);
+			
 			if(prev == NULL)
 			{
 				process = Dequeue(queuePQ);
@@ -480,7 +483,7 @@ void Aging(Queue *queueRR, Queue *queueSJF, Queue *queuePQ, Queue *queueFIFO, in
 		process->age++;
 		if(process->age >= agingFIFO)
 		{
-			printf("AGING PROCESS DETECTED IN FIFO. PID: %d, AGE: %d\n", process->pid, process->age);
+			
 			if(prev == NULL)
 			{
 				process = Dequeue(queueFIFO);
@@ -533,12 +536,12 @@ int main(void)
 	scanf("%d", &timeCycle);
 
 	printf("Enter the vaule of time slot for RR: ");
-//	scanf("%d", &initQuantum);
-	initQuantum = 5;
+	scanf("%d", &initQuantum);
+//	initQuantum = 5;
 
 	printf("Enter the context switching time: ");
-//	scanf("%d", &initSwitchingTime);
-	initSwitchingTime = 1;
+	scanf("%d", &initSwitchingTime);
+//	initSwitchingTime = 1;
 
 	queueRR->quantum = initQuantum;
 
@@ -546,66 +549,66 @@ int main(void)
 	int preemptionPQ;
 
 	printf("SJF with pre-emption(1-yes/0-no): ");
-//	scanf("%d", &preemptionSJF);
-	preemptionSJF = 0;
+	scanf("%d", &preemptionSJF);
+//	preemptionSJF = 0;
 	queueSJF->preemptive = preemptionSJF;
 
 	printf("PQ with pre-emption(1-yes/0-no): ");
-//	scanf("%d", &preemptionPQ);
-	preemptionPQ = 0;
+	scanf("%d", &preemptionPQ);
+//	preemptionPQ = 0;
 	queuePQ->preemptive = preemptionPQ;
 
-	int alphaRR = 5;
-	int alphaSJF = 5;
-	int alphaPQ = 5;
-	int alphaFIFO = 5;
+	int alphaRR;
+	int alphaSJF;
+	int alphaPQ;
+	int alphaFIFO;
 
 	printf("Enter the alpha co-eff for RR: ");
-//	scanf("%d", &alphaRR);
+	scanf("%d", &alphaRR);
 	
 	
 	printf("Enter the alpha co-eff for SJF: ");
-//	scanf("%d", &alphaSJF);
+	scanf("%d", &alphaSJF);
 
 	printf("Enter the alpha co-eff for PQ: ");
-//	scanf("%d", &alphaPQ);
+	scanf("%d", &alphaPQ);
 
 	printf("Enter the alpha co-eff for FIFO: ");
-//	scanf("%d", &alphaFIFO);
+	scanf("%d", &alphaFIFO);
 
-	int agingRR = 5;
-	int agingSJF = 5;
-	int agingPQ = 5;
-	int agingFIFO = 5;
+	int agingRR;
+	int agingSJF;
+	int agingPQ;
+	int agingFIFO;
 
 	printf("Enter the aging time for RR: ");
-//	scanf("%d", &agingRR);
+	scanf("%d", &agingRR);
 
 	printf("Enter the aging time for SJF: ");
-//	scanf("%d", &agingSJF);
+	scanf("%d", &agingSJF);
 
 	printf("Enter the aging time for PQ: ");
-//	scanf("%d", &agingPQ);
+	scanf("%d", &agingPQ);
 
 	printf("Enter the aging time for FIFO: ");
-//	scanf("%d", &agingFIFO);
+	scanf("%d", &agingFIFO);
 
-	int estimateRR = 5;
-	int estimateSJF = 5;
-	int estimatePQ = 5;
-	int estimateFIFO = 5;
+	int estimateRR;
+	int estimateSJF;
+	int estimatePQ;
+	int estimateFIFO;
 
 	printf("Enter the initial estimated time for RR: ");
-//	scanf("%d", &estimateRR);
+	scanf("%d", &estimateRR);
 
 	printf("Enter the initial estimated time for SJF: ");
-//	scanf("%d", &estimateSJF);
+	scanf("%d", &estimateSJF);
 
 	printf("Enter the initial estimated time for PQ: ");
-//	scanf("%d", &estimatePQ);
+	scanf("%d", &estimatePQ);
 
 	printf("Enter the initial estimated time for FIFO: ");
-//	scanf("%d", &estimateFIFO);
+	scanf("%d", &estimateFIFO);
 
 	srand(time(NULL));
 
@@ -665,10 +668,6 @@ int main(void)
 		{
 			printf("no new process was generated.\n\n");
 		}
-
-		printf("switching time: %d, needswitching: %d, serving: %d\n\n",switchingTime, needSwitching, serving);
-
-		printf("current process in null: %d, serving: %d\n\n", currentProcess == NULL, serving);
 
 		if(switchingTime > 0) // 스위칭 중이면 작업없이 다음 사이클로
 		{
@@ -747,8 +746,6 @@ int main(void)
 			}
 		}
 
-		printf("BEFORE AGING.\n");
-
 		Aging(queueRR, queueSJF, queuePQ, queueFIFO, agingSJF, agingPQ, agingFIFO);
 
 		printf("# of jobs in RR = %d\n\n", queueRR->count);
@@ -761,8 +758,6 @@ int main(void)
 		printf("#Total processes completed = %d\n\n", terminatedTotal);
 
 	}
-
-
 
 	return 0;
 }

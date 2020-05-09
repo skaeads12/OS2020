@@ -12,12 +12,20 @@ int lastPid = 0;
 int serving = 0; // cpu에서 작업중인 프로세스 pid, 없으면 0
 int needSwitching = 1; // 스위칭이 필요하면 1, 첫 작업엔 필요
 int switchingTime = 0; // 스위칭 하는데 남은 시간
+int timeCycleShare = -1;
 
 /* 스위칭, 생성된 프로세스, 종료된 프로세스 횟수 */
 int switchingCount = 0;
 int generatedTotal = 0;
 int terminatedTotal = 0;
+
+/* SUMMARY 용 */
 int totalServiceTime = 0;
+int totalIdleTime = 0;
+float totalTurnaroundTime = 0;
+float maximumTurnaround = 0;
+float maximumWaitingTime = 0;
+int totalWaitingTime = 0;
 
 typedef struct Process
 {
@@ -26,6 +34,7 @@ typedef struct Process
 	int priority;
 	int burstTime;
 	int arrivalTime;
+	int initBurstTime;
 
 	int age;
 
@@ -57,7 +66,8 @@ Process *CreateProcess(int alpha, int estimate)
 	new->state = -1;
 	new->priority = -1;
 	new->burstTime = GenerateBurstTime((float) alpha, (float) estimate);
-	new->arrivalTime = -1;
+	new->initBurstTime = new->burstTime;
+	new->arrivalTime = timeCycleShare;
 	new->age = 0;
 
 	return new;
@@ -311,7 +321,8 @@ int GenerateBurstTime(float alpha, float estimate)
 	else if(result == 0)
 		result = 1;
 
-	printf("Process execution time: %d\n\n", (int) result);
+	if(timeCycleShare != -1)
+		printf("Process execution time: %d\n\n", (int) result);
 
 	return (int) result;
 }
@@ -326,11 +337,12 @@ void GeneratePriority(Process *process)
 
 /* 프로세스를 서비스하는 함수, burstTime이 줄어듬.     */
 /* 만약 0이 되면 needSwitching이 올라가고 Terminate함. */
-void Service(Process *process)
+int Service(Process *process)
 {
 	if(process == NULL)
 	{
-		return;
+		printf("실행될리 없는 구간.\n");
+		return 0;
 	}
 
 	process->burstTime--;
@@ -341,7 +353,11 @@ void Service(Process *process)
 		serving = 0;
 		needSwitching = 1;
 		Terminate(process);
+
+		return 1;
 	}
+
+	return 0;
 }
 
 /* 큐에서 새로운 프로세스를 선택하는 함수, 없다면 NULL */
@@ -355,6 +371,7 @@ Process *Select(Queue *queue)
 			return NULL;
 		serving = servedProcess->pid;
 		
+		needSwitching = 0;
 		return servedProcess;
 	}
 	else
@@ -364,6 +381,21 @@ Process *Select(Queue *queue)
 void Terminate(Process *process)
 {
 	terminatedTotal++;
+
+	float turnaround = timeCycleShare - process->arrivalTime;
+	totalTurnaroundTime += turnaround;
+
+	if(turnaround > maximumTurnaround)
+		maximumTurnaround = turnaround;
+
+	float waiting = turnaround - (float) process->initBurstTime;
+	totalWaitingTime += waiting;
+
+	if(waiting > maximumWaitingTime)
+		maximumWaitingTime = waiting;
+
+	printf("----------\n\nprocess terminated.\n-------------\n\n");
+
 	free(process);
 }
 
@@ -529,86 +561,181 @@ int main(void)
 
 	Process *currentProcess = CreateProcess(0, 0);
 
-	int timeCycle;
-	int initSwitchingTime;
-	int initQuantum;
-	printf("Enter the time cycles: ");
-	scanf("%d", &timeCycle);
+	int timeCycle = 0;
+	int initSwitchingTime = -1;
+	int initQuantum = 0;
 
-	printf("Enter the vaule of time slot for RR: ");
-	scanf("%d", &initQuantum);
+	while(timeCycle < 1)
+	{
+		printf("Enter the time cycles: ");
+		scanf("%d", &timeCycle);
+		if(timeCycle < 1)
+			printf("1 이상의 양수로 입력해주십시오.\n");
+	}
+
+	while(initQuantum < 1)
+	{
+		printf("Enter the vaule of time slot for RR: ");
+		scanf("%d", &initQuantum);
+		if(initQuantum < 1)
+			printf("1 이상의 양수로 입력해주십시오.\n");
+	}
 //	initQuantum = 5;
 
-	printf("Enter the context switching time: ");
-	scanf("%d", &initSwitchingTime);
+	while(initSwitchingTime < 0)
+	{
+		printf("Enter the context switching time: ");
+		scanf("%d", &initSwitchingTime);
+		if(initSwitchingTime < 0)
+			printf("0 이상의 정수로 입력해주십시오.\n");
+	}
 //	initSwitchingTime = 1;
 
 	queueRR->quantum = initQuantum;
 
-	int preemptionSJF;
-	int preemptionPQ;
+	int preemptionSJF = -1;
+	int preemptionPQ = -1;
 
-	printf("SJF with pre-emption(1-yes/0-no): ");
-	scanf("%d", &preemptionSJF);
+	while(preemptionSJF != 0 && preemptionSJF != 1)
+	{
+		printf("SJF with pre-emption(1-yes/0-no): ");
+		scanf("%d", &preemptionSJF);
+
+		if(preemptionSJF != 0 && preemptionSJF != 1)
+			printf("preemptive 여부는 0과 1만 입력이 가능합니다.\n");
+	}
+
 //	preemptionSJF = 0;
 	queueSJF->preemptive = preemptionSJF;
 
-	printf("PQ with pre-emption(1-yes/0-no): ");
-	scanf("%d", &preemptionPQ);
+	while(preemptionPQ != 0 && preemptionPQ != 1)
+	{
+		printf("PQ with pre-emption(1-yes/0-no): ");
+		scanf("%d", &preemptionPQ);
+		if(preemptionPQ != 0 && preemptionPQ != 1)
+			printf("preemptive 여부는 0과 1만 입력이 가능합니다.\n");
+	}
 //	preemptionPQ = 0;
 	queuePQ->preemptive = preemptionPQ;
 
-	int alphaRR;
-	int alphaSJF;
-	int alphaPQ;
-	int alphaFIFO;
+	int alphaRR = 0;
+	int alphaSJF = 0;
+	int alphaPQ = 0;
+	int alphaFIFO = 0;
 
-	printf("Enter the alpha co-eff for RR: ");
-	scanf("%d", &alphaRR);
+	while(alphaRR < 1)
+	{
+		printf("Enter the alpha co-eff for RR: ");
+		scanf("%d", &alphaRR);
+		
+		if(alphaRR < 1)
+			printf("alpha 계수값은 1 이상의 양수만 입력가능합니다.\n");
+	}
+
+	while(alphaSJF < 1)
+	{	
+		printf("Enter the alpha co-eff for SJF: ");
+		scanf("%d", &alphaSJF);
+		if(alphaSJF < 1)
+			printf("alpha  계수값은 1이상의 양수만 입력가능합니다.\n");
+	}
+
+	while(alphaPQ < 1)
+	{
+		printf("Enter the alpha co-eff for PQ: ");
+		scanf("%d", &alphaPQ);
+		if(alphaPQ < 1)
+			printf("alpha 계수값은 1이상의 양수만 입력가능합니다.\n");
+	}
+
+	while(alphaFIFO < 1)
+	{
+		printf("Enter the alpha co-eff for FIFO: ");
+		scanf("%d", &alphaFIFO);
+		if(alphaFIFO < 1)
+			printf("alpha 계수값은 1이상의 양수만 입력가능합니다.\n");
+	}
+
+	int agingRR = 0;
+	int agingSJF = 0;
+	int agingPQ = 0;
+	int agingFIFO = 0;
+
+	while(agingRR < 1)
+	{
+		printf("Enter the aging time for RR: ");
+		scanf("%d", &agingRR);
+		if(agingRR < 1)
+			printf("aging time은 1이상의 양수만 입력가능합니다.\n");
+	}
+
+	while(agingSJF < 1)
+	{
+		printf("Enter the aging time for SJF: ");
+		scanf("%d", &agingSJF);
+
+		if(agingSJF < 1)
+			printf("aging time은 1이상의 양수만 입력가능합니다.\n");
+	}
+
+	while(agingPQ < 1)
+	{
+		printf("Enter the aging time for PQ: ");
+		scanf("%d", &agingPQ);
+
+		if(agingPQ < 1)
+			printf("aging time은 1이상의 양수만 입력가능합니다.\n");
+	}
+
+	while(agingFIFO < 1)
+	{
+		printf("Enter the aging time for FIFO: ");
+		scanf("%d", &agingFIFO);
+
+		if(agingFIFO < 1)
+			printf("aging time은 1이상의 양수만 입력가능합니다.\n");
+	}
+
+	int estimateRR = 0;
+	int estimateSJF = 0;
+	int estimatePQ = 0;
+	int estimateFIFO = 0;
+
+	while(estimateRR < 1)
+	{
+		printf("Enter the initial estimated time for RR: ");
+		scanf("%d", &estimateRR);
+
+		if(estimateRR < 1)
+			printf("예측 시간은 1이상의 양수만 입력가능합니다.\n");
+	}
 	
-	
-	printf("Enter the alpha co-eff for SJF: ");
-	scanf("%d", &alphaSJF);
+	while(estimateSJF < 1)	
+	{
+		printf("Enter the initial estimated time for SJF: ");
+		scanf("%d", &estimateSJF);
 
-	printf("Enter the alpha co-eff for PQ: ");
-	scanf("%d", &alphaPQ);
+		if(estimateSJF < 1)
+			printf("예측 시간은 1이상의 양수만 입력가능합니다.\n");
+	}
 
-	printf("Enter the alpha co-eff for FIFO: ");
-	scanf("%d", &alphaFIFO);
+	while(estimatePQ < 1)
+	{
+		printf("Enter the initial estimated time for PQ: ");
+		scanf("%d", &estimatePQ);
 
-	int agingRR;
-	int agingSJF;
-	int agingPQ;
-	int agingFIFO;
+		if(estimatePQ < 1)
+			printf("예측 시간은 1이상의 양수만 입력가능합니다.\n");
+	}
 
-	printf("Enter the aging time for RR: ");
-	scanf("%d", &agingRR);
+	while(estimateFIFO < 1)
+	{
+		printf("Enter the initial estimated time for FIFO: ");
+		scanf("%d", &estimateFIFO);
 
-	printf("Enter the aging time for SJF: ");
-	scanf("%d", &agingSJF);
-
-	printf("Enter the aging time for PQ: ");
-	scanf("%d", &agingPQ);
-
-	printf("Enter the aging time for FIFO: ");
-	scanf("%d", &agingFIFO);
-
-	int estimateRR;
-	int estimateSJF;
-	int estimatePQ;
-	int estimateFIFO;
-
-	printf("Enter the initial estimated time for RR: ");
-	scanf("%d", &estimateRR);
-
-	printf("Enter the initial estimated time for SJF: ");
-	scanf("%d", &estimateSJF);
-
-	printf("Enter the initial estimated time for PQ: ");
-	scanf("%d", &estimatePQ);
-
-	printf("Enter the initial estimated time for FIFO: ");
-	scanf("%d", &estimateFIFO);
+		if(estimateFIFO < 1)
+			printf("예측 시간은 1이상의 양수만 입력가능합니다.\n");
+	}
 
 	srand(time(NULL));
 
@@ -616,6 +743,7 @@ int main(void)
 
 	for(int i = 0; i < timeCycle; i++)
 	{
+		timeCycleShare = i;
 		printf("-------------------------------------\n[CYCLE TIME: %d]\n----------------------------------\n\n", i);
 
 		if(queueSJF == NULL)
@@ -646,14 +774,18 @@ int main(void)
 				case 1:
 					printf("Process appended to SJF queue.\n");
 					Enqueue_SJF(queueSJF, CreateProcess(alphaSJF, estimateSJF));
-					if(currentProcess->state == SJF && currentProcess->burstTime > queueSJF->front->burstTime && preemptionSJF == 0)
+					if(currentProcess == NULL)
+						needSwitching = 1;
+					else if(currentProcess->state == SJF && currentProcess->burstTime > queueSJF->front->burstTime && preemptionSJF == 0)
 						needSwitching = 1;
 					
 					break;
 				case 2:
 					printf("Process appended to PQ queue.\n");
 					Enqueue_PQ(queuePQ, CreateProcess(alphaPQ, estimatePQ));
-					if(currentProcess->state == PQ && currentProcess->priority > queuePQ->front->burstTime && preemptionPQ == 0)
+					if(currentProcess == NULL)
+						needSwitching = 1;
+					else if(currentProcess->state == PQ && currentProcess->priority > queuePQ->front->burstTime && preemptionPQ == 0)
 						needSwitching = 1;
 					
 					break;
@@ -673,7 +805,7 @@ int main(void)
 		{
 			Aging(queueRR, queueSJF, queuePQ, queueFIFO, agingSJF, agingPQ, agingFIFO);
 
-			printf("IDLE TIME\n\n");
+			totalIdleTime++;
 
 			switchingTime--;
 			printf("# of jobs in RR = %d\n\n", queueRR->count);
@@ -689,10 +821,10 @@ int main(void)
 
 		if((serving == 0 && needSwitching == 1) || i == 0) // 작업중이던 프로세스 TERMINATED.
 		{
-			if(currentProcess != NULL)
-				currentProcess = currentProcess->pc;
 
-			if(!currentProcess) // 다음 작업할 프로세스 선택
+			currentProcess = NULL;
+
+			if(currentProcess == NULL) // 다음 작업할 프로세스 선택
 			{
 				if(IsEmptyQueue(queueRR))
 					if(IsEmptyQueue(queueSJF))
@@ -732,7 +864,11 @@ int main(void)
 		else // 그냥 계속 서비스
 		{
 
-			Service(currentProcess);
+			if(Service(currentProcess))
+			{
+				needSwitching = 1;
+			}
+
 			if(currentProcess->state == RR)
 			{
 				queueRR->quantum--;
@@ -758,6 +894,14 @@ int main(void)
 		printf("#Total processes completed = %d\n\n", terminatedTotal);
 
 	}
+
+	printf("--------------------\n\nSUMMARY\n\n--------------------\n\n");
+	printf("AVERAGE WAITING TIME: %.4f\n\n", totalWaitingTime / (float) terminatedTotal);
+	printf("AVERAGE TURNAROUND TIME: %.4f\n\n", totalTurnaroundTime / (float) terminatedTotal);
+	printf("CPU UTILIZATION: %.4f%\n\n", ( (float) (timeCycleShare - totalIdleTime) / (float) timeCycleShare ) * 100);
+	printf("MAXIMUM TURNAROUND TIME: %d\n\n", (int) maximumTurnaround);
+	printf("MAXIMUM WAIT TIME: %d\n\n", (int) maximumWaitingTime);
+	printf("CPU THROUGHPUT: %.4f%\n\n", ((float) terminatedTotal / totalTurnaroundTime) * 100);
 
 	return 0;
 }
